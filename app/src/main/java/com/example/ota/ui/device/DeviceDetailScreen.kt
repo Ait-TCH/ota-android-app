@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -210,14 +211,32 @@ fun EntityCard(
 
             // 亮度滑条
             if (isOn && entity.supportedBrightness) {
-                Text("亮度 ${brightness * 100 / 255}%", fontSize = 12.sp, color = MiTextDim,
-                    modifier = Modifier.padding(top = 10.dp))
+                // 内部状态自管：拖动中不受外部重组（load/WS）干扰，
+                // 只在外部值显著变化（设备回发/初始加载）时同步
+                var sliderPos by remember(entity.entityId) {
+                    mutableFloatStateOf((entity.brightness ?: 128).toFloat())
+                }
+                var dragging by remember(entity.entityId) { mutableStateOf(false) }
+                // 外部值变化且未在拖动时同步（设备回发/初始加载）
+                LaunchedEffect(entity.brightness) {
+                    if (!dragging && entity.brightness != null) {
+                        sliderPos = entity.brightness.toFloat()
+                    }
+                }
+                Text("亮度 ${(sliderPos.toInt()) * 100 / 255}%", fontSize = 12.sp,
+                    color = MiTextDim, modifier = Modifier.padding(top = 10.dp))
                 Slider(
-                    value = brightness.toFloat(),
-                    onValueChange = { onBrightness(it.toInt()) },
+                    value = sliderPos,
+                    onValueChange = {
+                        dragging = true
+                        sliderPos = it
+                        onBrightness(it.toInt())   // 本地显示更新（不发指令）
+                    },
                     onValueChangeFinished = {
-                        // 松手才发指令 + 刷新真实状态（拖动中发会被连续 load 打断回弹）
-                        onBrightnessCommit(brightness)
+                        if (dragging) {
+                            dragging = false
+                            onBrightnessCommit(sliderPos.toInt())
+                        }
                     },
                     valueRange = 3f..255f,
                     colors = SliderDefaults.colors(
