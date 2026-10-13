@@ -41,7 +41,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
     fun sendSms() {
         if (phone.isEmpty()) { msg = "请先输入手机号"; msgOk = false; return }
         busy = true
-        OtaApi.sendSms(phone) { ok, m ->
+                        OtaApi.sendSms(phone, if (mode == "login") "login" else "register") { ok, m ->
             busy = false
             msg = m; msgOk = ok
             if (ok) countdown = 60

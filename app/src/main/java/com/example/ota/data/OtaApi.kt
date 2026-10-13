@@ -209,8 +209,9 @@ object OtaApi {
 
 
     // ── 短信验证码 ──
-    fun sendSms(phone: String, onResult: (Boolean, String) -> Unit) {
-        postJson("/api/sms/send", mapOf("phone" to phone)) { ok, body ->
+    fun sendSms(phone: String, scene: String = "register",
+                onResult: (Boolean, String) -> Unit) {
+        postJson("/api/sms/send", mapOf("phone" to phone, "scene" to scene)) { ok, body ->
             var success = ok
             var msg = body.take(60)
             try {
