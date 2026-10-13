@@ -207,6 +207,89 @@ object OtaApi {
         }
     }
 
+
+    // ── 短信验证码 ──
+    fun sendSms(phone: String, onResult: (Boolean, String) -> Unit) {
+        postJson("/api/sms/send", mapOf("phone" to phone)) { ok, body ->
+            var success = ok
+            var msg = body.take(60)
+            try {
+                val o = org.json.JSONObject(body)
+                success = ok && o.optBoolean("success", false)
+                msg = o.optString("message").ifEmpty { o.optString("error", body.take(60)) }
+            } catch (e: Exception) { /* HTML */ }
+            mainThread { onResult(success, msg) }
+        }
+    }
+
+    /** 短信验证码登录（未注册自动注册，需审核） */
+    fun loginSms(phone: String, smsCode: String, onResult: (Boolean, String) -> Unit) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val req = okhttp3.Request.Builder().url(BASE + "/api/auth/me").build()
+                val resp = client.newCall(req).execute()
+                val o = org.json.JSONObject(resp.body?.string() ?: "{}")
+                csrfToken = o.optString("csrf_token", "")
+            } catch (e: Exception) {
+                mainThread { onResult(false, "网络错误（无法访问 ota.aittch.xyz）") }
+                return@launch
+            }
+            fetchJson(
+                method = "POST",
+                path = "/login",
+                body = mapOf("phone" to phone, "sms_code" to smsCode,
+                             "login_type" to "sms"),
+                headers = mapOf("X-CSRF-Token" to csrfToken)
+            ) { ok, body ->
+                if (ok) {
+                    loggedIn = true
+                    meJson { success ->
+                        onResult(success, if (success) "登录成功" else "登录成功（信息获取失败）")
+                    }
+                } else {
+                    var msg = "登录失败"
+                    try {
+                        val o = org.json.JSONObject(body)
+                        msg = o.optString("error", msg)
+                    } catch (e: Exception) {}
+                    mainThread { onResult(false, msg) }
+                }
+            }
+        }
+    }
+
+    /** 短信注册（新手机号 + 验证码 + 密码） */
+    fun registerSms(phone: String, smsCode: String, password: String,
+                    nickname: String, onResult: (Boolean, String) -> Unit) {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val req = okhttp3.Request.Builder().url(BASE + "/api/auth/me").build()
+                val resp = client.newCall(req).execute()
+                val o = org.json.JSONObject(resp.body?.string() ?: "{}")
+                csrfToken = o.optString("csrf_token", "")
+            } catch (e: Exception) {
+                mainThread { onResult(false, "网络错误") }
+                return@launch
+            }
+            fetchJson(
+                method = "POST",
+                path = "/register",
+                body = mapOf("phone" to phone, "password" to password,
+                             "nickname" to nickname, "sms_code" to smsCode),
+                headers = mapOf("X-CSRF-Token" to csrfToken)
+            ) { ok, body ->
+                var success = ok
+                var msg = body.take(80)
+                try {
+                    val o = org.json.JSONObject(body)
+                    success = ok && o.optBoolean("success", false)
+                    msg = o.optString("message").ifEmpty { o.optString("error", msg) }
+                } catch (e: Exception) {}
+                mainThread { onResult(success, msg) }
+            }
+        }
+    }
+
     // ── 操作日志 ──
     fun operationLogs(onResult: (List<Map<String, String>>, String?) -> Unit) {
         getJson("/api/operation-logs?limit=50") { ok, body ->

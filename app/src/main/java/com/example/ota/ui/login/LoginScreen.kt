@@ -16,17 +16,37 @@ import androidx.compose.ui.unit.sp
 import com.example.ota.data.OtaApi
 import com.example.ota.ui.theme.*
 
-/** 登录/注册二合一页 */
+/** 登录/注册页：密码 + 短信验证码两种方式 */
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit) {
-    var mode by remember { mutableStateOf("login") }   // login | register
+    var mode by remember { mutableStateOf("login") }        // login | register
+    var loginType by remember { mutableStateOf("password") } // password | sms
     var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var password2 by remember { mutableStateOf("") }
+    var smsCode by remember { mutableStateOf("") }
     var nickname by remember { mutableStateOf("") }
     var msg by remember { mutableStateOf("") }
     var msgOk by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var countdown by remember { mutableStateOf(0) }
+
+    LaunchedEffect(countdown) {
+        if (countdown > 0) {
+            kotlinx.coroutines.delay(1000)
+            countdown -= 1
+        }
+    }
+
+    fun sendSms() {
+        if (phone.isEmpty()) { msg = "请先输入手机号"; msgOk = false; return }
+        busy = true
+        OtaApi.sendSms(phone) { ok, m ->
+            busy = false
+            msg = m; msgOk = ok
+            if (ok) countdown = 60
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -37,7 +57,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         Text("OTA Hub", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MiBlue)
         Text("智能家居设备管理平台", fontSize = 14.sp, color = MiTextDim,
             modifier = Modifier.padding(top = 6.dp))
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(36.dp))
 
         Card(shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -50,16 +70,60 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
 
+                // 登录方式切换（仅登录模式）
+                if (mode == "login") {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        Text("密码登录",
+                            fontSize = 13.sp,
+                            color = if (loginType == "password") MiBlue else MiTextDim,
+                            fontWeight = if (loginType == "password") FontWeight.Medium else FontWeight.Normal,
+                            modifier = Modifier.clickable { loginType = "password" })
+                        Text("短信登录",
+                            fontSize = 13.sp,
+                            color = if (loginType == "sms") MiBlue else MiTextDim,
+                            fontWeight = if (loginType == "sms") FontWeight.Medium else FontWeight.Normal,
+                            modifier = Modifier.clickable { loginType = "sms" })
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 OutlinedTextField(phone, { phone = it }, label = { Text("手机号") },
                     singleLine = true, shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(password, { password = it },
-                    label = { Text("密码（至少 6 位）") },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true, shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+
+                if (mode == "login" && loginType == "password") {
+                    OutlinedTextField(password, { password = it }, label = { Text("密码") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+                }
+
+                // 短信验证码（短信登录 / 注册时显示）
+                if ((mode == "login" && loginType == "sms") || mode == "register") {
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                        OutlinedTextField(smsCode, { smsCode = it },
+                            label = { Text("短信验证码") },
+                            singleLine = true, shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f))
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = { sendSms() },
+                            enabled = countdown == 0 && phone.isNotEmpty() && !busy,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MiBlue)
+                        ) {
+                            Text(if (countdown > 0) "${countdown}s" else "发送验证码",
+                                fontSize = 12.sp)
+                        }
+                    }
+                }
 
                 if (mode == "register") {
+                    OutlinedTextField(password, { password = it },
+                        label = { Text("设置密码（至少 6 位）") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
                     OutlinedTextField(password2, { password2 = it },
                         label = { Text("确认密码") },
                         visualTransformation = PasswordVisualTransformation(),
@@ -73,13 +137,24 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
 
                 Button(onClick = {
                     if (mode == "login") {
-                        if (phone.isEmpty() || password.isEmpty()) {
-                            msg = "请输入手机号和密码"; msgOk = false; return@Button
+                        if (phone.isEmpty()) { msg = "请输入手机号"; msgOk = false; return@Button }
+                        if (loginType == "password" && password.isEmpty()) {
+                            msg = "请输入密码"; msgOk = false; return@Button
+                        }
+                        if (loginType == "sms" && smsCode.isEmpty()) {
+                            msg = "请输入短信验证码"; msgOk = false; return@Button
                         }
                         busy = true; msg = "登录中…"
-                        OtaApi.login(phone, password) { ok, m ->
-                            busy = false; msg = m; msgOk = ok
-                            if (ok) onLoginSuccess()
+                        if (loginType == "sms") {
+                            OtaApi.loginSms(phone, smsCode) { ok, m ->
+                                busy = false; msg = m; msgOk = ok
+                                if (ok) onLoginSuccess()
+                            }
+                        } else {
+                            OtaApi.login(phone, password) { ok, m ->
+                                busy = false; msg = m; msgOk = ok
+                                if (ok) onLoginSuccess()
+                            }
                         }
                     } else {
                         if (phone.isEmpty() || password.length < 6) {
@@ -88,13 +163,13 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                         if (password != password2) {
                             msg = "两次密码不一致"; msgOk = false; return@Button
                         }
+                        if (smsCode.isEmpty()) {
+                            msg = "请输入短信验证码"; msgOk = false; return@Button
+                        }
                         busy = true; msg = "注册中…"
-                        OtaApi.register(phone, password, nickname) { ok, m ->
+                        OtaApi.registerSms(phone, smsCode, password, nickname) { ok, m ->
                             busy = false; msg = m; msgOk = ok
-                            if (ok) {
-                                // 注册成功提示等待审核，切回登录
-                                mode = "login"
-                            }
+                            if (ok) mode = "login"
                         }
                     }
                 }, enabled = !busy,
