@@ -176,6 +176,37 @@ object OtaApi {
         }
     }
 
+
+    // ── 注册 ──
+    fun register(phone: String, password: String, nickname: String,
+                 onResult: (Boolean, String) -> Unit) {
+        // 先拿 csrf（未登录也可）
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val req = okhttp3.Request.Builder().url(BASE + "/api/auth/me").build()
+                val resp = client.newCall(req).execute()
+                val o = org.json.JSONObject(resp.body?.string() ?: "{}")
+                csrfToken = o.optString("csrf_token", "")
+            } catch (e: Exception) { /* 继续，无 csrf 时由服务端 403 提示 */ }
+            fetchJson(
+                method = "POST",
+                path = "/register",
+                body = mapOf("phone" to phone, "password" to password,
+                             "nickname" to nickname),
+                headers = mapOf("X-CSRF-Token" to csrfToken)
+            ) { ok, body ->
+                var success = ok
+                var msg = body.take(80)
+                try {
+                    val o = org.json.JSONObject(body)
+                    success = ok && o.optBoolean("success", false)
+                    msg = o.optString("message").ifEmpty { o.optString("error", body.take(60)) }
+                } catch (e: Exception) { /* HTML 响应 */ }
+                mainThread { onResult(success, msg) }
+            }
+        }
+    }
+
     // ── 操作日志 ──
     fun operationLogs(onResult: (List<Map<String, String>>, String?) -> Unit) {
         getJson("/api/operation-logs?limit=50") { ok, body ->

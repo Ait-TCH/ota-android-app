@@ -35,6 +35,7 @@ import com.example.ota.ui.dashboard.DashboardScreen
 import com.example.ota.ui.device.DeviceDetailScreen
 import com.example.ota.ui.devices.DevicesScreen
 import com.example.ota.ui.firmware.FirmwareScreen
+import com.example.ota.ui.login.LoginScreen
 import com.example.ota.ui.logs.LogsScreen
 import com.example.ota.ui.provision.ProvisionScreen
 import com.example.ota.ui.scan.ScanScreen
